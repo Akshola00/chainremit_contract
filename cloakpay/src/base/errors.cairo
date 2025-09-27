@@ -1,6 +1,7 @@
 pub mod CloakPayErrors {
     pub const UNSUPPORTED_TOKEN: felt252 = 'UNSUPPORTED TOKEN';
     pub const COMMITMENT_ALREADY_USED: felt252 = 'COMMITMENT ALREADY USED';
+    pub const ERROR_ZERO_ADDRESS: felt252 = 'ERROR ZERO ADDRESS';
 }
 
 pub mod payment_errors {
