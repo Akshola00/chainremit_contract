@@ -6,12 +6,12 @@ pub mod cloakpay {
     use openzeppelin::introspection::src5::SRC5Component;
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::storage::{
-        Map, StorageMapReadAccess, StoragePathEntry, StoragePointerReadAccess,
-        StoragePointerWriteAccess,
+        Map, MutableVecTrait, StorageMapReadAccess, StoragePathEntry, StoragePointerReadAccess,
+        StoragePointerWriteAccess, Vec, VecTrait,
     };
     use starknet::{ContractAddress, get_block_timestamp, get_caller_address, get_contract_address};
     use crate::base::errors::{CloakPayErrors, payment_errors};
-    use crate::base::events::Events::DepositEvent;
+    use crate::base::events::Events::*;
     use crate::base::types::DepositDetails;
     use crate::interfaces::ICloakpay::ICloakPay;
     const ADMIN_ROLE: felt252 = selector!("ADMIN");
@@ -42,6 +42,7 @@ pub mod cloakpay {
         total_deposits: u256,
         supported_tokens: Map<u256, ContractAddress>, // supported token_id to contract address
         supported_tokens_status: Map<ContractAddress, bool>, // token address to supported status
+        supported_tokens_list: Vec<ContractAddress>, // list of supported token addresses
         paused: bool, // contract paused status
         #[substorage(v0)]
         ownable: OwnableComponent::Storage,
@@ -55,6 +56,10 @@ pub mod cloakpay {
     #[derive(Drop, starknet::Event)]
     pub enum Event {
         DepositEvent: DepositEvent,
+        TokenAdded: TokenAdded,
+        TokenRemoved: TokenRemoved,
+        Paused: Paused,
+        Unpaused: Unpaused,
         #[flat]
         OwnableEvent: OwnableComponent::Event,
         #[flat]
@@ -75,6 +80,8 @@ pub mod cloakpay {
         self.accesscontrol._grant_role(ADMIN_ROLE, owner);
         self.accesscontrol._grant_role(OVERALL_ADMIN_ROLE, owner);
         self.supported_tokens.entry(1_u256).write(default_supported_token);
+        self.supported_tokens_status.entry(default_supported_token).write(true);
+        self.supported_tokens_list.push(default_supported_token);
         self.total_deposits.write(0_u256);
     }
 
@@ -125,11 +132,25 @@ pub mod cloakpay {
         fn pause(ref self: ContractState) {
             self.accesscontrol.assert_only_role(ADMIN_ROLE);
             self.paused.write(true);
+            self
+                .emit(
+                    Event::Paused(
+                        Paused { account: get_caller_address(), timestamp: get_block_timestamp() },
+                    ),
+                );
         }
         fn resume(ref self: ContractState) {
             self.accesscontrol.assert_only_role(ADMIN_ROLE);
 
             self.paused.write(false);
+            self
+                .emit(
+                    Event::Unpaused(
+                        Unpaused {
+                            account: get_caller_address(), timestamp: get_block_timestamp(),
+                        },
+                    ),
+                );
         }
         fn get_paused_status(ref self: ContractState) -> bool {
             self.paused.read()
@@ -139,13 +160,24 @@ pub mod cloakpay {
             self.accesscontrol.assert_only_role(ADMIN_ROLE);
             assert(!token_address.is_zero(), CloakPayErrors::ERROR_ZERO_ADDRESS);
             self._assert_not_paused();
+
+            assert(!self.supported_tokens_status.read(token_address), 'Token already supported');
+
             self.supported_tokens_status.entry(token_address).write(true);
+            self.supported_tokens_list.push(token_address);
+            self.emit(Event::TokenAdded(TokenAdded { token_address }));
         }
 
         fn remove_supported_token(ref self: ContractState, token_address: ContractAddress) {
             self.accesscontrol.assert_only_role(ADMIN_ROLE);
             assert(!token_address.is_zero(), CloakPayErrors::ERROR_ZERO_ADDRESS);
+            self._assert_not_paused();
+
+            assert(self.supported_tokens_status.read(token_address), 'Token not supported');
+
             self.supported_tokens_status.entry(token_address).write(false);
+            self._remove_token_from_list(token_address);
+            self.emit(Event::TokenRemoved(TokenRemoved { token_address }));
         }
 
         fn is_token_supported(ref self: ContractState, token_address: ContractAddress) -> bool {
@@ -153,15 +185,8 @@ pub mod cloakpay {
         }
 
         fn get_supported_tokens(ref self: ContractState) -> Array<ContractAddress> {
-            let supported_tokens_array = ArrayTrait::<ContractAddress>::new();
-            for (token_address, is_supported) in self.supported_tokens_status.iter() {
-                if is_supported {
-                    supported_tokens_array.push(token_address);
-                }
-            }
-            supported_tokens_array
+            self._get_supported_tokens_array()
         }
-        
     }
 
     #[generate_trait]
@@ -197,6 +222,41 @@ pub mod cloakpay {
         /// @notice Asserts that the contract is not paused.
         fn _assert_not_paused(ref self: ContractState) {
             assert(!self.paused.read(), 'CONTRACT IS PAUSED');
+        }
+
+        /// @notice Gets all supported tokens as an array
+        fn _get_supported_tokens_array(self: @ContractState) -> Array<ContractAddress> {
+            let mut tokens = ArrayTrait::<ContractAddress>::new();
+            let list_length = self.supported_tokens_list.len();
+            for i in 0..list_length {
+                let token_address = self.supported_tokens_list.at(i).read();
+                if self.supported_tokens_status.read(token_address) {
+                    tokens.append(token_address);
+                }
+            }
+            tokens
+        }
+
+        /// @notice Removes a token from the supported tokens list
+        fn _remove_token_from_list(ref self: ContractState, token_address: ContractAddress) {
+            let mut temp_list = ArrayTrait::<ContractAddress>::new();
+            let list_length = self.supported_tokens_list.len();
+
+            for i in 0..list_length {
+                let current_token = self.supported_tokens_list.at(i).read();
+                if current_token != token_address {
+                    temp_list.append(current_token);
+                }
+            }
+
+            for _ in 0..list_length {
+                let _ = self.supported_tokens_list.pop();
+            }
+
+            let temp_length = temp_list.len();
+            for i in 0..temp_length {
+                self.supported_tokens_list.push(*temp_list.at(i));
+            }
         }
     }
 }
