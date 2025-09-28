@@ -117,8 +117,6 @@ fn test_create_deposit_should_panic_if_commitment_already_used() {
 }
 
 
-
-
 #[test]
 #[should_panic(expected: 'CONTRACT IS PAUSED')]
 fn test_create_deposit_should_panic_if_contract_paused() {
@@ -150,7 +148,6 @@ fn test_create_deposit_should_panic_if_contract_paused() {
     stop_cheat_caller_address(cloakpay_address);
 
     cloakpay_dispatcher.deposit(1, to_18_decimals(25), 1443);
-
 }
 
 #[test]
@@ -224,7 +221,6 @@ fn test_pause_contract_should_panic_if_non_admin_pauses() {
     start_cheat_caller_address(cloakpay_address, test_address_1);
 
     cloakpay_dispatcher.pause();
-
 }
 
 #[test]
@@ -259,7 +255,6 @@ fn test_pause_and_resume_contract() {
 }
 
 
-
 #[test]
 #[should_panic(expected: 'Caller is missing role')]
 fn test_pause_and_resume_contract_should_panic_if_non_admin_resumes() {
@@ -276,7 +271,6 @@ fn test_pause_and_resume_contract_should_panic_if_non_admin_resumes() {
     start_cheat_caller_address(cloakpay_address, test_address_1);
     cloakpay_dispatcher.resume();
     stop_cheat_caller_address(cloakpay_address);
-
 }
 
 
@@ -311,7 +305,6 @@ fn test_add_supported_token() {
 
     stop_cheat_caller_address(cloakpay_address);
 }
-
 
 
 #[test]
@@ -366,7 +359,6 @@ fn test_remove_supported_token() {
 
     stop_cheat_caller_address(cloakpay_address);
 }
-
 
 
 #[test]
